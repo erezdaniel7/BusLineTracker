@@ -7,7 +7,10 @@ import type {
 
 interface SearchPanelProps {
   filters: SearchFilters
-  departureTimes: readonly string[]
+  departureOptions: readonly {
+    time: string
+    stationName: string | null
+  }[]
   timetableLoading: boolean
   timetableMessage: string | null
   loading: boolean
@@ -17,7 +20,7 @@ interface SearchPanelProps {
 
 export function SearchPanel({
   filters,
-  departureTimes,
+  departureOptions,
   timetableLoading,
   timetableMessage,
   loading,
@@ -90,18 +93,21 @@ export function SearchPanel({
 
         <label>
           <span>שעת יציאה מתוכננת</span>
-          <input
-            type="time"
-            list="departure-options"
+          <select
             value={filters.departureTime}
             onChange={(event) => update('departureTime', event.target.value)}
             required
-          />
-          <datalist id="departure-options">
-            {departureTimes.map((time) => (
-              <option value={time} key={time} />
+            disabled={timetableLoading || departureOptions.length === 0}
+          >
+            <option value="">
+              {timetableLoading ? 'טוען שעות…' : 'בחרו יציאה מהרשימה'}
+            </option>
+            {departureOptions.map(({ time, stationName }) => (
+              <option value={time} key={time}>
+                {time}{stationName ? ` · ${stationName}` : ''}
+              </option>
             ))}
-          </datalist>
+          </select>
         </label>
 
         <button
@@ -118,9 +124,9 @@ export function SearchPanel({
         {timetableLoading
           ? 'טוען שעות יציאה מתוכננות…'
           : timetableMessage ??
-            (departureTimes.length > 0
-              ? `נמצאו ${departureTimes.length} שעות יציאה. אפשר לבחור מהרשימה או להקליד ידנית.`
-              : 'אפשר להקליד שעה ידנית.')}
+          (departureOptions.length > 0
+            ? `נמצאו ${departureOptions.length} יציאות זמינות ליום שנבחר.`
+            : 'לא נמצאו יציאות מתוכננות ליום שנבחר.')}
       </div>
     </form>
   )

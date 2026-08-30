@@ -5,6 +5,7 @@ interface StopsTableProps {
   passages: readonly StopPassage[]
   selectedStopId: number | null
   onSelectStop: (stopId: number) => void
+  compact?: boolean
 }
 
 const confidenceLabels = {
@@ -30,6 +31,7 @@ export function StopsTable({
   passages,
   selectedStopId,
   onSelectStop,
+  compact = false,
 }: StopsTableProps) {
   return (
     <section className="card table-card">
@@ -45,6 +47,30 @@ export function StopsTable({
         <div className="empty-state compact">
           <strong>לא נמצא לוח תחנות ליציאה שנבחרה</strong>
           <span>נתוני ה-GPS עדיין מוצגים במפה, אם נמצאו.</span>
+        </div>
+      ) : compact ? (
+        <div className="compact-stop-list">
+          {passages.map((passage, index) => (
+            <button
+              type="button"
+              key={`${passage.stop.id}-${index}`}
+              className={passage.stop.id === selectedStopId ? 'selected' : ''}
+              onClick={() => onSelectStop(passage.stop.id)}
+            >
+              <span className="compact-stop-number">{index + 1}</span>
+              <span className="compact-stop-name">
+                <strong>{passage.stop.name ?? 'תחנה ללא שם'}</strong>
+                <small>{passage.stop.city ?? `מזהה ${passage.stop.id}`}</small>
+              </span>
+              <span className="compact-stop-times">
+                <small>מתוכנן</small>
+                <strong dir="ltr">{formatLocalTime(passage.stop.plannedArrivalTime)}</strong>
+                <span className={`delay-pill ${delayClass(passage.delayMinutes)}`}>
+                  {delayText(passage.delayMinutes)}
+                </span>
+              </span>
+            </button>
+          ))}
         </div>
       ) : (
         <div className="table-scroll">

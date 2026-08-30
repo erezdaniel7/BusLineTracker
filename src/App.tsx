@@ -3,6 +3,7 @@ import 'leaflet/dist/leaflet.css'
 import './App.css'
 import {
   deduplicateLocations,
+  fetchSiriDepartureTimes,
   fetchTimetable,
   fetchVehicleLocations,
 } from './api/openBus'
@@ -26,6 +27,7 @@ import type {
 } from './domain/types'
 import {
   addDays,
+  jerusalemLocalToDate,
   jerusalemToday,
   localTimeValue,
   scheduledStartWindow,
@@ -48,7 +50,7 @@ function getInitialFilters(): SearchFilters {
   const direction = params.get('direction')
   const ride = Number(params.get('ride'))
   return {
-    date: params.get('date') ?? addDays(jerusalemToday(), -1),
+    date: params.get('date') ?? jerusalemToday(),
     line: isLine(line) ? line : '150',
     direction: isDirection(direction) ? direction : 'to-yeruham',
     departureTime: params.get('time') ?? '',
@@ -105,10 +107,28 @@ function selectStopsForDeparture(
     : departures
 }
 
+function shiftTimetableToDate(
+  timetable: readonly TimetableStop[],
+  targetDate: string,
+): TimetableStop[] {
+  const shiftTimestamp = (timestamp: string | null): string | null => {
+    if (!timestamp) return null
+    const time = localTimeValue(timestamp)
+    return jerusalemLocalToDate(targetDate, `${time}:00`).toISOString()
+  }
+
+  return timetable.map((stop) => ({
+    ...stop,
+    plannedArrivalTime: shiftTimestamp(stop.plannedArrivalTime),
+    lineStartTime: shiftTimestamp(stop.lineStartTime),
+  }))
+}
+
 function App() {
   const initial = useMemo(getInitialFilters, [])
   const [filters, setFilters] = useState<SearchFilters>(initial)
   const [timetable, setTimetable] = useState<TimetableStop[]>([])
+  const [siriDepartureTimes, setSiriDepartureTimes] = useState<string[]>([])
   const [timetableLoading, setTimetableLoading] = useState(false)
   const [timetableMessage, setTimetableMessage] = useState<string | null>(null)
   const [locations, setLocations] = useState<VehicleLocation[]>([])
@@ -116,6 +136,7 @@ function App() {
   const [error, setError] = useState<string | null>(null)
   const [isDelayed, setIsDelayed] = useState(false)
   const [selectedStopId, setSelectedStopId] = useState<number | null>(null)
+  const [searchExpanded, setSearchExpanded] = useState(!initial.departureTime)
   const tripController = useRef<AbortController | null>(null)
   const hasAutoLoaded = useRef(false)
 
@@ -130,26 +151,49 @@ function App() {
     setTimetableLoading(true)
     setTimetableMessage(null)
     setTimetable([])
+    setSiriDepartureTimes([])
 
-    fetchTimetable(
-      getRoute(filters.line, filters.direction).lineRef,
-      serviceDayWindow(filters.date),
-      controller.signal,
-    )
-      .then((rows) => {
+    const routeConfig = getRoute(filters.line, filters.direction)
+    const window = serviceDayWindow(filters.date)
+
+    Promise.allSettled([
+      fetchTimetable(routeConfig.lineRef, window, controller.signal),
+      fetchSiriDepartureTimes(routeConfig.lineRef, window, controller.signal),
+    ])
+      .then(async ([timetableResult, siriResult]) => {
+        if (controller.signal.aborted) return
+        let rows = timetableResult.status === 'fulfilled' ? timetableResult.value : []
+        const siriTimes = siriResult.status === 'fulfilled' ? siriResult.value : []
+
+        if (rows.length === 0 && siriTimes.length > 0) {
+          const templateDate = addDays(filters.date, -7)
+          try {
+            const template = await fetchTimetable(
+              routeConfig.lineRef,
+              serviceDayWindow(templateDate),
+              controller.signal,
+            )
+            rows = shiftTimetableToDate(template, filters.date)
+          } catch (caught: unknown) {
+            if (caught instanceof DOMException && caught.name === 'AbortError') return
+          }
+        }
+
+        if (controller.signal.aborted) return
         setTimetable(rows)
-        if (rows.length === 0) {
+        setSiriDepartureTimes(siriTimes)
+
+        if (siriTimes.length > 0 && timetableResult.status === 'fulfilled' && timetableResult.value.length === 0) {
           setTimetableMessage(
-            'לוח הזמנים ליום הזה אינו זמין עדיין או שאין בו נסיעות. אפשר להקליד שעה ידנית.',
+            rows.length > 0
+              ? 'מוצגות יציאות SIRI שנקלטו ב-GPS. רשימת התחנות מבוססת על אותו יום בשבוע הקודם.'
+              : 'מוצגות יציאות SIRI שנקלטו בנתוני ה-GPS; רשימת התחנות המתוכננת עדיין אינה זמינה.',
+          )
+        } else if (siriTimes.length === 0 && rows.length === 0) {
+          setTimetableMessage(
+            'לא נמצאו לוח זמנים מתוכנן או נסיעות GPS ליום הזה.',
           )
         }
-      })
-      .catch((caught: unknown) => {
-        if (caught instanceof DOMException && caught.name === 'AbortError') return
-        const detail = caught instanceof Error ? ` ${caught.message}` : ''
-        setTimetableMessage(
-          `לא ניתן לטעון שעות מתוכננות. אפשר להקליד ידנית.${detail}`,
-        )
       })
       .finally(() => {
         if (!controller.signal.aborted) setTimetableLoading(false)
@@ -189,6 +233,7 @@ function App() {
         : rides[0]?.id ?? null
       setFilters((current) => ({ ...current, rideId: selectedRideId }))
       setStatus(cleanRows.length > 0 ? 'success' : 'empty')
+      if (cleanRows.length > 0) setSearchExpanded(false)
     } catch (caught: unknown) {
       if (caught instanceof DOMException && caught.name === 'AbortError') return
       setError(
@@ -210,22 +255,32 @@ function App() {
     }
   }, [initial, loadTrip])
 
-  const departureTimes = useMemo(
-    () =>
-      [
-        ...new Set(
-          timetable.flatMap((stop) =>
-            stop.lineStartTime ? [localTimeValue(stop.lineStartTime)] : [],
-          ),
-        ),
-      ].sort(),
-    [timetable],
+  const departureOptions = useMemo(
+    () => {
+      const options = new Map<string, string | null>()
+      for (const timestamp of siriDepartureTimes) {
+        const time = localTimeValue(timestamp)
+        if (!options.has(time)) options.set(time, null)
+      }
+      if (options.size === 0) {
+        for (const stop of timetable) {
+          if (!stop.lineStartTime) continue
+          const time = localTimeValue(stop.lineStartTime)
+          if (!options.has(time)) options.set(time, stop.name)
+        }
+      }
+      return [...options].sort(([a], [b]) => a.localeCompare(b)).map(
+        ([time, stationName]) => ({ time, stationName }),
+      )
+    },
+    [siriDepartureTimes, timetable],
   )
   const rides = useMemo(() => rideOptionsFor(locations), [locations])
   const activeRideId =
     filters.rideId && rides.some((ride) => ride.id === filters.rideId)
       ? filters.rideId
       : rides[0]?.id ?? null
+  const activeRide = rides.find((ride) => ride.id === activeRideId) ?? null
   const points = useMemo(
     () =>
       locations.filter((location) => location.siriRideId === activeRideId),
@@ -235,9 +290,27 @@ function App() {
     () => selectStopsForDeparture(timetable, filters.departureTime),
     [filters.departureTime, timetable],
   )
+  const routePreviewStops = useMemo(() => {
+    const firstRideId = timetable.find((stop) => stop.gtfsRideId)?.gtfsRideId
+    if (!firstRideId) return []
+    return timetable.filter((stop) => stop.gtfsRideId === firstRideId)
+  }, [timetable])
   const passages = useMemo(
     () => estimateStopPassages(stops, points),
     [points, stops],
+  )
+  const mapPassages = useMemo(
+    () =>
+      passages.length > 0
+        ? passages
+        : routePreviewStops.map((stop) => ({
+          stop,
+          point: null,
+          distanceMeters: null,
+          delayMinutes: null,
+          confidence: null,
+        })),
+    [passages, routePreviewStops],
   )
 
   const handleFiltersChange = (nextFilters: SearchFilters) => {
@@ -250,142 +323,159 @@ function App() {
 
   return (
     <div className="app-shell">
-      <header className="site-header">
-        <div className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            ב
-          </span>
-          <div>
-            <strong>מסע בזמן</strong>
-            <span>מעקב נסיעות אוטובוס</span>
-          </div>
-        </div>
-        <span className="data-badge">
-          <i /> נתונים היסטוריים
-        </span>
-      </header>
-
-      <main>
-        <section className="hero-copy">
-          <span className="eyebrow">קו 150 / 152</span>
-          <h1>איפה האוטובוס היה — ומתי?</h1>
-          <p>
-            שחזור נסיעות בין באר שבע לירוחם לפי לוח הזמנים ונתוני GPS היסטוריים.
-          </p>
+      <main className="map-workspace">
+        <section className="map-stage" aria-label="מפת קווי באר שבע ירוחם">
+          <TripMap
+            points={points}
+            passages={mapPassages}
+            selectedStopId={selectedStopId}
+            onSelectStop={setSelectedStopId}
+          />
         </section>
 
-        <SearchPanel
-          filters={filters}
-          departureTimes={departureTimes}
-          timetableLoading={timetableLoading}
-          timetableMessage={timetableMessage}
-          loading={status === 'loading'}
-          onChange={handleFiltersChange}
-          onSubmit={() => {
-            writeUrl(filters, true)
-            void loadTrip(filters)
-          }}
-        />
-
-        {status === 'loading' && (
-          <div className="state-banner loading-state" role="status">
-            <span className="large-spinner" />
-            <div>
-              <strong>מאתרים את הנסיעה ומורידים את מסלול ה-GPS…</strong>
-              <span>
-                {isDelayed
-                  ? 'השרת מתעכב. הבקשה עדיין פעילה ולא בוטלה.'
-                  : 'הבקשה ממוקדת ביום ובשעת היציאה שנבחרו.'}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {status === 'error' && (
-          <div className="state-banner error-state" role="alert">
-            <span aria-hidden="true">!</span>
-            <div>
-              <strong>לא הצלחנו לטעון את הנסיעה</strong>
-              <p>{error}</p>
-              <small>
-                טווחים גדולים עלולים להחזיר שגיאת שרת. נסו שוב או בחרו יום ושעה
-                אחרים.
-              </small>
-            </div>
-          </div>
-        )}
-
-        {status === 'empty' && (
-          <div className="empty-state">
-            <span aria-hidden="true">⌁</span>
-            <strong>לא נמצאו תצפיות GPS לנסיעה הזאת</strong>
-            <p>
-              ייתכן שהנסיעה לא בוצעה, טרם הועברה לארכיון, או ששעת ה-SIRI שונה
-              מעט.
-            </p>
-          </div>
-        )}
-
-        {status === 'success' && (
-          <>
-            <section className="trip-title">
+        <aside className="control-sidebar">
+          <header className="site-header">
+            <div className="brand">
+              <span className="brand-mark" aria-hidden="true">מ</span>
               <div>
-                <span className="line-number">{route.line}</span>
-                <div>
-                  <span className="eyebrow">נסיעה שנבחרה</span>
-                  <h2>
-                    {route.origin} ← {route.destination}
-                  </h2>
-                </div>
+                <strong>מדד הקו</strong>
+                <span>מעקב נסיעות אוטובוס</span>
               </div>
-              <span className="point-count">{points.length} תצפיות GPS</span>
+            </div>
+            <span className="data-badge"><i /> היסטורי</span>
+          </header>
+
+          <div className="sidebar-content">
+            <section className={`sidebar-search${searchExpanded ? ' expanded' : ''}`}>
+              <button
+                type="button"
+                className="search-toggle"
+                aria-expanded={searchExpanded}
+                onClick={() => setSearchExpanded((current) => !current)}
+              >
+                <span className="search-toggle-icon" aria-hidden="true">⌕</span>
+                <span>
+                  <strong>{searchExpanded ? 'איתור נסיעה' : `קו ${filters.line} · ${filters.departureTime}`}</strong>
+                  <small>{searchExpanded ? 'בחרו תאריך, קו ושעת יציאה' : `${filters.date} · ${route.origin} ← ${route.destination}`}</small>
+                </span>
+                <i aria-hidden="true">⌄</i>
+              </button>
+
+              {searchExpanded && (
+                <div className="search-body">
+                  <section className="hero-copy">
+                    <span className="eyebrow">קווים 150 / 152</span>
+                    <h1>איפה האוטובוס היה?</h1>
+                    <p>בחרו נסיעה בין באר שבע לירוחם וצפו במסלול ובתחנות.</p>
+                  </section>
+
+                  <SearchPanel
+                    filters={filters}
+                    departureOptions={departureOptions}
+                    timetableLoading={timetableLoading}
+                    timetableMessage={timetableMessage}
+                    loading={status === 'loading'}
+                    onChange={handleFiltersChange}
+                    onSubmit={() => {
+                      writeUrl(filters, true)
+                      void loadTrip(filters)
+                    }}
+                  />
+                </div>
+              )}
             </section>
 
-            <RideSelector
-              rides={rides}
-              selectedRideId={activeRideId}
-              onSelect={(rideId) =>
-                setFilters((current) => ({ ...current, rideId }))
-              }
-            />
-            <SummaryCards passages={passages} points={points} />
-            <div className="results-grid">
-              <TripMap
-                points={points}
-                passages={passages}
-                selectedStopId={selectedStopId}
-                onSelectStop={setSelectedStopId}
-              />
-              <StopsTable
-                passages={passages}
-                selectedStopId={selectedStopId}
-                onSelectStop={setSelectedStopId}
-              />
-            </div>
-          </>
-        )}
+            {status === 'loading' && (
+              <div className="state-banner loading-state" role="status">
+                <span className="large-spinner" />
+                <div>
+                  <strong>מאתרים את הנסיעה…</strong>
+                  <span>{isDelayed ? 'השרת מתעכב, הבקשה עדיין פעילה.' : 'מורידים את מסלול ה-GPS.'}</span>
+                </div>
+              </div>
+            )}
 
-        <details className="methodology">
-          <summary>איך מחושב זמן המעבר בתחנה?</summary>
-          <div>
-            <p>
-              לכל תחנה נבחרת תצפית ה-GPS הקרובה ביותר ברצף הנסיעה, עד מרחק של{' '}
-              {STOP_MATCH_THRESHOLD_METERS} מטר. כל תצפית משויכת לכל היותר לתחנה
-              אחת, וההתאמה מתקדמת רק קדימה לאורך המסלול.
-            </p>
-            <p>
-              זהו אומדן בלבד: הדגימה היא בערך פעם בדקה ועלולים להיות חוסרים. המפה
-              שוברת את הקו בפער של יותר מ-3 דקות או בקפיצה של יותר מ-3 ק״מ, ולא
-              משלימה מידע שלא נצפה. כל הזמנים מוצגים לפי Asia/Jerusalem.
-            </p>
+            {status === 'error' && (
+              <div className="state-banner error-state" role="alert">
+                <span aria-hidden="true">!</span>
+                <div><strong>לא הצלחנו לטעון</strong><p>{error}</p></div>
+              </div>
+            )}
+
+            {status === 'empty' && (
+              <div className="empty-state sidebar-empty">
+                <strong>לא נמצאו תצפיות GPS לנסיעה</strong>
+                <p>תחנות הקו עדיין מוצגות במפה.</p>
+              </div>
+            )}
+
+            {status === 'success' && (
+              <div className="sidebar-result">
+                <section className="trip-title">
+                  <div>
+                    <span className="line-number">{route.line}</span>
+                    <div><span className="eyebrow">נסיעה שנבחרה</span><h2>{route.origin} ← {route.destination}</h2></div>
+                  </div>
+                  <span className="point-count">{points.length} נקודות</span>
+                </section>
+                {activeRide && (
+                  <dl className="bus-details-card">
+                    <div>
+                      <dt>לוחית רישוי</dt>
+                      <dd dir="ltr">{activeRide.vehicleRef ?? 'לא ידועה'}</dd>
+                    </div>
+                    <div>
+                      <dt>יציאה מתוכננת</dt>
+                      <dd dir="ltr">{localTimeValue(activeRide.scheduledStartTime)}</dd>
+                    </div>
+                    <div>
+                      <dt>SIRI ride ID</dt>
+                      <dd dir="ltr">#{activeRide.id}</dd>
+                    </div>
+                    <div>
+                      <dt>תצפיות GPS</dt>
+                      <dd>{activeRide.pointCount}</dd>
+                    </div>
+                  </dl>
+                )}
+                <RideSelector
+                  rides={rides}
+                  selectedRideId={activeRideId}
+                  onSelect={(rideId) => setFilters((current) => ({ ...current, rideId }))}
+                />
+                <SummaryCards passages={passages} points={points} />
+                <StopsTable
+                  passages={passages}
+                  selectedStopId={selectedStopId}
+                  onSelectStop={setSelectedStopId}
+                  compact
+                />
+                <details className="methodology">
+                  <summary>איך מחושב זמן המעבר בתחנה?</summary>
+                  <div>
+                    <p>
+                      לכל תחנה נבחרת תצפית ה-GPS הקרובה ביותר, עד מרחק של{' '}
+                      {STOP_MATCH_THRESHOLD_METERS} מטר. התצפית הראשונה מוחרגת
+                      מההתאמה כאשר גם התצפית השנייה נמצאת באזור תחנת המוצא,
+                      מפני שהיא עשויה לציין את הפעלת מערכת האוטובוס ולא את
+                      תחילת הנסיעה.
+                    </p>
+                  </div>
+                </details>
+              </div>
+            )}
           </div>
-        </details>
-      </main>
 
-      <footer>
-        <span>מקור: Open Bus Stride API · הסדנא לידע ציבורי</span>
-        <span>מפות © OpenStreetMap contributors</span>
-      </footer>
+          <footer>
+            <div>
+              <a href="https://github.com/erezdaniel7/BusLineTracker" target="_blank" rel="noreferrer">GitHub</a>
+              <a href="https://open-bus-stride-api.hasadna.org.il/docs" target="_blank" rel="noreferrer">תיעוד API</a>
+              <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>
+            </div>
+            <span>נתונים: Open Bus · הסדנא לידע ציבורי</span>
+          </footer>
+        </aside>
+      </main>
     </div>
   )
 }

@@ -18,7 +18,7 @@ export function RideSelector({
     <section className="ride-selector" aria-labelledby="ride-selector-title">
       <div>
         <span className="eyebrow">נמצאו כמה נסיעות SIRI</span>
-        <h2 id="ride-selector-title">בחרו את הרכב המתאים</h2>
+        <h2 id="ride-selector-title">בחרו את לוחית הרישוי המתאימה</h2>
       </div>
       <div className="ride-options">
         {rides.map((ride) => (
@@ -31,7 +31,7 @@ export function RideSelector({
             <strong>{formatLocalTime(ride.scheduledStartTime)}</strong>
             <span dir="ltr">SIRI #{ride.id}</span>
             <small>
-              רכב {ride.vehicleRef ?? 'לא ידוע'} · {ride.pointCount} נקודות
+              לוחית רישוי {ride.vehicleRef ?? 'לא ידועה'} · {ride.pointCount} נקודות
             </small>
           </button>
         ))}

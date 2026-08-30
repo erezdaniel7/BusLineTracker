@@ -152,6 +152,29 @@ export async function fetchTimetable(
   )
 }
 
+export async function fetchSiriDepartureTimes(
+  lineRef: number,
+  window: { from: string; to: string },
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const params = new URLSearchParams({
+    siri_route__line_refs: String(lineRef),
+    siri_route__operator_refs: String(OPERATOR_REF),
+    scheduled_start_time_from: window.from,
+    scheduled_start_time_to: window.to,
+    order_by: 'scheduled_start_time asc',
+  })
+  return fetchPaginated(
+    '/siri_rides/list',
+    params,
+    (value) => {
+      if (!isRecord(value)) throw new Error('התקבלה רשומת נסיעת SIRI לא תקינה')
+      return requiredString(value, 'scheduled_start_time')
+    },
+    signal,
+  )
+}
+
 export async function fetchVehicleLocations(
   lineRef: number,
   scheduledWindow: { from: string; to: string },

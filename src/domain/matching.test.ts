@@ -54,6 +54,19 @@ function point(
 }
 
 describe('estimateStopPassages', () => {
+  it('ignores the system-startup observation when matching the first stop', () => {
+    const passages = estimateStopPassages(
+      [stop(1, 31.24, 34.79, '2025-01-01T08:02:00+02:00')],
+      [
+        point(10, 31.24, 34.79, '2025-01-01T05:55:00Z'),
+        point(11, 31.2402, 34.7901, '2025-01-01T06:03:00Z'),
+      ],
+    )
+
+    expect(passages[0].point?.id).toBe(11)
+    expect(passages[0].delayMinutes).toBe(1)
+  })
+
   it('matches nearby observations and calculates delay', () => {
     const passages = estimateStopPassages(
       [stop(1, 31.24, 34.79, '2025-01-01T08:02:00+02:00')],

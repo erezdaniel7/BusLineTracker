@@ -19,7 +19,17 @@ export function estimateStopPassages(
   points: readonly VehicleLocation[],
   thresholdMeters = STOP_MATCH_THRESHOLD_METERS,
 ): StopPassage[] {
-  let nextPointIndex = 0
+  // The first SIRI observation often marks the driver's system startup while
+  // the bus is parked. Ignore it only when the second sample is still inside
+  // the first station area, so a sparse trace does not lose its first match.
+  const firstStop = stops[0]
+  const secondPointIsAtOrigin =
+    points.length > 1 &&
+    firstStop !== undefined &&
+    firstStop.lat !== null &&
+    firstStop.lon !== null &&
+    distanceMeters(firstStop, points[1]) <= thresholdMeters
+  let nextPointIndex = secondPointIsAtOrigin ? 1 : 0
 
   return stops.map((stop) => {
     if (stop.lat === null || stop.lon === null || nextPointIndex >= points.length) {

@@ -95,27 +95,17 @@ export function TripMap({
   const segments = useMemo(() => splitTraceSegments(points), [points])
 
   return (
-    <section className="card map-card">
-      <div className="section-heading">
-        <div>
-          <span className="eyebrow">מסלול שנצפה בפועל</span>
-          <h2>מפת הנסיעה</h2>
-        </div>
-        <div className="map-legend">
-          <span><i className="legend-line" /> מסלול GPS</span>
-          <span><i className="legend-stop" /> תחנה</span>
-        </div>
-      </div>
-
+    <section className="map-card">
       <MapContainer
-        center={[31.1, 34.9]}
-        zoom={9}
+        center={[31.02, 34.91]}
+        zoom={10}
         scrollWheelZoom
         className="trip-map"
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+          maxZoom={19}
         />
         <MapViewport
           points={points}
@@ -129,7 +119,7 @@ export function TripMap({
             <Polyline
               key={`${segment[0].id}-${segment.at(-1)?.id}`}
               positions={segment.map((point) => [point.lat, point.lon])}
-              pathOptions={{ color: '#176b5b', weight: 5, opacity: 0.84 }}
+              pathOptions={{ color: '#0891b2', weight: 6, opacity: 0.9 }}
             />
           ))}
 
@@ -140,7 +130,7 @@ export function TripMap({
             radius={4}
             pathOptions={{
               color: '#ffffff',
-              fillColor: '#155e52',
+              fillColor: '#0891b2',
               fillOpacity: 0.9,
               weight: 1.5,
             }}
@@ -164,7 +154,7 @@ export function TripMap({
                 <DetailRow label="כיוון" value={point.bearing === null ? null : `${point.bearing}°`} />
                 <DetailRow label="מרחק מתחילת מסע" value={point.distanceFromJourneyStart === null ? null : `${point.distanceFromJourneyStart} מ׳`} />
                 <DetailRow label="מרחק מתחנה מקושרת" value={point.distanceFromRideStopMeters === null ? null : `${point.distanceFromRideStopMeters} מ׳`} />
-                <DetailRow label="רכב" value={point.vehicleRef} ltr />
+                <DetailRow label="לוחית רישוי" value={point.vehicleRef} ltr />
                 <DetailRow label="SIRI ride ID" value={point.siriRideId} ltr />
                 <DetailRow label="Location ID" value={point.id} ltr />
                 <DetailRow label="Ride-stop ID" value={point.siriRideStopId} ltr />
