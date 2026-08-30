@@ -87,11 +87,12 @@ npm ci
 npm run build
 ```
 
-For a GitHub Pages project site, pass the repository path as Vite's base:
+The Vite base path is configured for this repository, and
+`.github/workflows/deploy-pages.yml` builds and deploys the site automatically.
+After making the repository public, select **GitHub Actions** under
+**Settings → Pages → Build and deployment → Source**. Pushes to
+`erezdaniel7-bus-tracker-webapp` then publish the site at
+`https://erezdaniel7.github.io/BusLineTracker/`.
 
-```bash
-npm run build -- --base=/YOUR_REPOSITORY_NAME/
-```
-
-Publish the generated `dist/` directory. No runtime environment variables,
-secrets, server routes, or rewrite rules are required.
+No runtime environment variables, secrets, server routes, or rewrite rules are
+required.
