@@ -1,4 +1,4 @@
-# מדד הקו
+# madad-hakav (מדד הקו)
 
 A frontend-only historical bus trip viewer for routes 150 and 152 between
 Be'er Sheva and Yeruham. The Hebrew-first RTL interface uses a full-screen
