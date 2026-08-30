@@ -1,5 +1,7 @@
 # madad-hakav (מדד הקו)
 
+[Live site](https://erezdaniel7.github.io/madad-hakav/) · [GitHub repository](https://github.com/erezdaniel7/madad-hakav)
+
 A frontend-only historical bus trip viewer for routes 150 and 152 between
 Be'er Sheva and Yeruham. The Hebrew-first RTL interface uses a full-screen
 Leaflet/OpenStreetMap view and a separately scrolling trip-information sidebar.
@@ -104,7 +106,7 @@ The Vite base path is configured for this repository, and
 After making the repository public, select **GitHub Actions** under
 **Settings → Pages → Build and deployment → Source**. Pushes to
 `erezdaniel7-bus-tracker-webapp` then publish the site at
-`https://erezdaniel7.github.io/BusLineTracker/`.
+`https://erezdaniel7.github.io/madad-hakav/`.
 
 No runtime environment variables, secrets, server routes, or rewrite rules are
 required.

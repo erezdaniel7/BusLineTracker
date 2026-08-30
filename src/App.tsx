@@ -468,7 +468,7 @@ function App() {
 
           <footer>
             <div>
-              <a href="https://github.com/erezdaniel7/BusLineTracker" target="_blank" rel="noreferrer">GitHub</a>
+              <a href="https://github.com/erezdaniel7/madad-hakav" target="_blank" rel="noreferrer">GitHub</a>
               <a href="https://open-bus-stride-api.hasadna.org.il/docs" target="_blank" rel="noreferrer">תיעוד API</a>
               <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>
             </div>
