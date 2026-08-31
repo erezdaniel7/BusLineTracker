@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties, KeyboardEvent, PointerEvent } from 'react'
 import 'leaflet/dist/leaflet.css'
 import './App.css'
 import {
@@ -35,6 +36,15 @@ import {
 } from './utils/time'
 
 type LoadStatus = 'idle' | 'loading' | 'success' | 'empty' | 'error'
+
+const MOBILE_SHEET_MIN_HEIGHT = 144
+
+function clampSheetHeight(height: number): number {
+  return Math.min(
+    Math.max(height, MOBILE_SHEET_MIN_HEIGHT),
+    Math.max(MOBILE_SHEET_MIN_HEIGHT, window.innerHeight - 16),
+  )
+}
 
 function isLine(value: string | null): value is LineNumber {
   return value === '150' || value === '152'
@@ -137,10 +147,26 @@ function App() {
   const [isDelayed, setIsDelayed] = useState(false)
   const [selectedStopId, setSelectedStopId] = useState<number | null>(null)
   const [searchExpanded, setSearchExpanded] = useState(!initial.departureTime)
+  const [sheetHeight, setSheetHeight] = useState(() =>
+    clampSheetHeight(window.innerHeight * 0.46),
+  )
+  const [sheetDragging, setSheetDragging] = useState(false)
+  const sheetDragCleanup = useRef<(() => void) | null>(null)
   const tripController = useRef<AbortController | null>(null)
   const hasAutoLoaded = useRef(false)
 
   const route = getRoute(filters.line, filters.direction)
+
+  useEffect(() => {
+    const handleResize = () => {
+      setSheetHeight((current) => clampSheetHeight(current))
+    }
+    window.addEventListener('resize', handleResize)
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      sheetDragCleanup.current?.()
+    }
+  }, [])
 
   useEffect(() => {
     writeUrl(filters)
@@ -321,6 +347,54 @@ function App() {
     setError(null)
   }
 
+  const handleSheetPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    sheetDragCleanup.current?.()
+    const startY = event.clientY
+    const startHeight = sheetHeight
+
+    const handlePointerMove = (moveEvent: globalThis.PointerEvent) => {
+      const movement = startY - moveEvent.clientY
+      setSheetHeight(clampSheetHeight(startHeight + movement))
+    }
+
+    const finishPointerDrag = () => {
+      window.removeEventListener('pointermove', handlePointerMove)
+      window.removeEventListener('pointerup', finishPointerDrag)
+      window.removeEventListener('pointercancel', finishPointerDrag)
+      sheetDragCleanup.current = null
+      setSheetDragging(false)
+      setSheetHeight((current) => {
+        if (current < window.innerHeight * 0.24) return MOBILE_SHEET_MIN_HEIGHT
+        if (current > window.innerHeight * 0.78) return window.innerHeight - 16
+        return current
+      })
+    }
+
+    sheetDragCleanup.current = finishPointerDrag
+    window.addEventListener('pointermove', handlePointerMove)
+    window.addEventListener('pointerup', finishPointerDrag)
+    window.addEventListener('pointercancel', finishPointerDrag)
+    setSheetDragging(true)
+  }
+
+  const handleSheetKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const step = event.shiftKey ? 96 : 40
+    if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      setSheetHeight((current) => clampSheetHeight(current + step))
+    } else if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      setSheetHeight((current) => clampSheetHeight(current - step))
+    } else if (event.key === 'Home') {
+      event.preventDefault()
+      setSheetHeight(MOBILE_SHEET_MIN_HEIGHT)
+    } else if (event.key === 'End') {
+      event.preventDefault()
+      setSheetHeight(window.innerHeight - 16)
+    }
+  }
+
   return (
     <div className="app-shell">
       <main className="map-workspace">
@@ -333,7 +407,56 @@ function App() {
           />
         </section>
 
-        <aside className="control-sidebar">
+        <aside
+          className={`control-sidebar${sheetDragging ? ' is-dragging' : ''}`}
+          style={{
+            '--sheet-height': `${sheetHeight}px`,
+          } as CSSProperties}
+        >
+          <div className="sheet-resize-row">
+            <div
+              className="sheet-resize-handle"
+              role="separator"
+              aria-label="שינוי גובה חלונית המידע"
+              aria-orientation="horizontal"
+              aria-valuemin={Math.round((MOBILE_SHEET_MIN_HEIGHT / window.innerHeight) * 100)}
+              aria-valuemax={98}
+              aria-valuenow={Math.round((sheetHeight / window.innerHeight) * 100)}
+              tabIndex={0}
+              onPointerDown={handleSheetPointerDown}
+              onKeyDown={handleSheetKeyDown}
+              onDoubleClick={() =>
+                setSheetHeight((current) =>
+                  current > window.innerHeight * 0.7
+                    ? clampSheetHeight(window.innerHeight * 0.46)
+                    : window.innerHeight - 16,
+                )
+              }
+            >
+              <span aria-hidden="true" />
+            </div>
+            <button
+              type="button"
+              className={`sheet-size-toggle${sheetHeight > window.innerHeight * 0.7 ? ' is-expanded' : ''}`}
+              aria-label={
+                sheetHeight > window.innerHeight * 0.7
+                  ? 'כווץ את חלונית המידע'
+                  : 'הרחב את חלונית המידע'
+              }
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={() =>
+                setSheetHeight((current) =>
+                  current > window.innerHeight * 0.7
+                    ? MOBILE_SHEET_MIN_HEIGHT
+                    : window.innerHeight - 16,
+                )
+              }
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m6.5 14.5 5.5-5 5.5 5" />
+              </svg>
+            </button>
+          </div>
           <header className="site-header">
             <div className="brand">
               <span className="brand-mark" aria-hidden="true">מ</span>
