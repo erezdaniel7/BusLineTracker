@@ -138,6 +138,32 @@ export function scheduledStartWindow(
   }
 }
 
+export function scheduledComparisonWindow(
+  date: string,
+  time: string,
+  beforeMinutes = 8,
+  afterMinutes = 60,
+): { from: string; to: string } {
+  const start = jerusalemLocalToDate(date, `${time}:00`).getTime()
+  return {
+    from: new Date(start - beforeMinutes * 60_000).toISOString(),
+    to: new Date(start + afterMinutes * 60_000).toISOString(),
+  }
+}
+
+export function scheduledFollowingWindow(
+  date: string,
+  time: string,
+  fromMinutes = 2,
+  toMinutes = 60,
+): { from: string; to: string } {
+  const start = jerusalemLocalToDate(date, `${time}:00`).getTime()
+  return {
+    from: new Date(start + fromMinutes * 60_000).toISOString(),
+    to: new Date(start + toMinutes * 60_000).toISOString(),
+  }
+}
+
 export function formatLocalTime(timestamp: string | null): string {
   if (!timestamp) return '—'
   return displayTimeFormatter.format(new Date(timestamp))

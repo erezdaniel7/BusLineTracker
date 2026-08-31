@@ -23,6 +23,8 @@ export function estimateStopPassages(
   thresholdMeters = STOP_MATCH_THRESHOLD_METERS,
   rideStopOrders: ReadonlyMap<number, SiriRideStopInfo> = new Map(),
 ): StopPassage[] {
+  const stopMetadata =
+    rideStopOrders instanceof Map ? rideStopOrders : new Map<number, SiriRideStopInfo>()
   // The first SIRI observation often marks the driver's system startup while
   // the bus is parked. Ignore it only when the second sample is still inside
   // the first station area, so a sparse trace does not lose its first match.
@@ -42,7 +44,7 @@ export function estimateStopPassages(
     const targetOrder = stopIndex + 1
     const stationCode =
       stop.code ??
-      [...rideStopOrders.values()].find((info) => info.order === targetOrder)
+      [...stopMetadata.values()].find((info) => info.order === targetOrder)
         ?.code ??
       null
     if (stop.lat === null || stop.lon === null || nextPointIndex >= points.length) {
@@ -59,7 +61,7 @@ export function estimateStopPassages(
 
     const linkedCandidates = points.flatMap((point, index) => {
       if (index < nextPointIndex || point.siriRideStopId === null) return []
-      return rideStopOrders.get(point.siriRideStopId)?.order === targetOrder
+      return stopMetadata.get(point.siriRideStopId)?.order === targetOrder
         ? [
           {
             index,
@@ -102,7 +104,7 @@ export function estimateStopPassages(
         const knownOrder =
           point.siriRideStopId === null
             ? undefined
-            : rideStopOrders.get(point.siriRideStopId)?.order
+            : stopMetadata.get(point.siriRideStopId)?.order
         if (knownOrder !== undefined) continue
         const distance = distanceMeters(stopCoordinate, point)
         if (distance <= thresholdMeters) {

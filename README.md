@@ -15,6 +15,10 @@ Leaflet/OpenStreetMap view and a separately scrolling trip-information sidebar.
 - Multiple SIRI ride selection when a time window contains more than one ride
 - Jerusalem-local time display with daylight-saving-aware query boundaries
 - Estimated stop passage, delay, distance, and confidence
+- Exact scheduled-trip identity matching with following departures kept separate
+- Explicit observed, not-observed, GPS-gap, and not-verifiable evidence states
+- GPS interruption, prolonged-stop, and approximate route-deviation diagnostics
+- Daily planned/SIRI trip counts as a service denominator
 - Current-day station fallback using the same weekday's timetable from one week earlier
 - Trace splitting across gaps over 3 minutes or jumps over 3 km
 - Detailed popups for every GPS point and station marker
@@ -83,6 +87,20 @@ Stops without a reliable nearby observation are shown as unavailable. Map lines
 are split for time gaps over 3 minutes and geographic jumps over 3 km rather than
 drawing a misleading connection. All query boundaries and displayed times use
 the `Asia/Jerusalem` time zone.
+
+GPS observations are grouped by SIRI ride identity. A late bus remains attached
+to its original `scheduled_start_time`; a later scheduled departure is shown as
+a separate following trip and is never silently substituted for the requested
+one. When duplicate target identities exist, selection considers journey
+identity, route progress, endpoint coverage, and sample coverage rather than
+point count alone. Missing GPS is reported as missing evidence—not proof that a
+physical trip was cancelled.
+
+Feed gaps and prolonged stationary periods are reported independently. Approximate
+route-deviation warnings require at least three consecutive points over one
+kilometre from the corridor connecting planned stops and reset across feed gaps.
+Because this is a stop-to-stop corridor rather than the official GTFS shape, the
+UI presents deviations as a suspicion rather than a definitive route violation.
 
 Current-day planned GTFS data may not yet exist in the `route_timetable`
 aggregation even when SIRI GPS data is already available. The app therefore

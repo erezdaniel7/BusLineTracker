@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   jerusalemLocalToDate,
   localTimeValue,
+  scheduledComparisonWindow,
+  scheduledFollowingWindow,
   scheduledStartWindow,
   serviceDayWindow,
 } from './time'
@@ -30,6 +32,20 @@ describe('Jerusalem time conversion', () => {
     expect(scheduledStartWindow('2025-01-15', '08:30')).toEqual({
       from: '2025-01-15T06:22:00.000Z',
       to: '2025-01-15T06:38:00.000Z',
+    })
+  })
+
+  it('builds a separate window for following scheduled trips', () => {
+    expect(scheduledComparisonWindow('2025-01-15', '08:30')).toEqual({
+      from: '2025-01-15T06:22:00.000Z',
+      to: '2025-01-15T07:30:00.000Z',
+    })
+  })
+
+  it('excludes the target from the following-trip window', () => {
+    expect(scheduledFollowingWindow('2025-01-15', '08:30')).toEqual({
+      from: '2025-01-15T06:32:00.000Z',
+      to: '2025-01-15T07:30:00.000Z',
     })
   })
 

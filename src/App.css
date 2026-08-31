@@ -407,6 +407,117 @@ h3 {
   color: #71817d;
 }
 
+.ride-relation {
+  width: max-content;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #5f6368;
+  background: #eef1f2;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.ride-relation.target {
+  color: #067c55;
+  background: #e3f4ec;
+}
+
+.ride-relation.following {
+  color: #8a5a00;
+  background: #fff2d6;
+}
+
+.evidence-panel {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 14px;
+  border: 1px solid #cbdde2;
+  border-radius: 12px;
+  background: #f5fbfc;
+}
+
+.evidence-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.evidence-title>span {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #178a62;
+  box-shadow: 0 0 0 4px rgba(23, 138, 98, 0.12);
+}
+
+.evidence-title>div {
+  display: grid;
+}
+
+.evidence-title small,
+.evidence-panel dt,
+.evidence-caveat {
+  color: #6d7d82;
+  font-size: 10px;
+}
+
+.evidence-title strong {
+  color: #173c35;
+  font-size: 14px;
+}
+
+.evidence-panel p {
+  margin: 0;
+  color: #43575d;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.evidence-panel dl {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0;
+}
+
+.evidence-panel dl>div {
+  display: grid;
+  gap: 1px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.evidence-panel dd {
+  margin: 0;
+  color: #263b40;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.evidence-feed-gap,
+.evidence-not-observed {
+  border-color: #ead3a0;
+  background: #fffaf0;
+}
+
+.evidence-feed-gap .evidence-title>span,
+.evidence-not-observed .evidence-title>span {
+  background: #d89011;
+  box-shadow: 0 0 0 4px rgba(216, 144, 17, 0.13);
+}
+
+.evidence-not-gps-verifiable {
+  border-color: #d9dce0;
+  background: #f7f8f9;
+}
+
+.evidence-not-gps-verifiable .evidence-title>span {
+  background: #7d858b;
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -1744,4 +1855,25 @@ body,
   .control-sidebar footer>div {
     gap: 10px;
   }
+}
+
+.service-denominator {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 7px;
+  margin-top: 7px;
+  padding-top: 9px;
+  border-top: 1px solid #edf0f1;
+  color: #71807d;
+  font-size: 10px;
+}
+
+.service-denominator strong {
+  color: #42575c;
+  font-weight: 600;
+}
+
+.service-denominator i {
+  font-style: normal;
 }

@@ -14,6 +14,8 @@ interface SearchPanelProps {
   timetableLoading: boolean
   timetableMessage: string | null
   loading: boolean
+  plannedTripCount: number
+  siriTripCount: number
   onChange: (filters: SearchFilters) => void
   onSubmit: () => void
 }
@@ -24,6 +26,8 @@ export function SearchPanel({
   timetableLoading,
   timetableMessage,
   loading,
+  plannedTripCount,
+  siriTripCount,
   onChange,
   onSubmit,
 }: SearchPanelProps) {
@@ -128,6 +132,14 @@ export function SearchPanel({
             ? `נמצאו ${departureOptions.length} יציאות זמינות ליום שנבחר.`
             : 'לא נמצאו יציאות מתוכננות ליום שנבחר.')}
       </div>
+      {(plannedTripCount > 0 || siriTripCount > 0) && (
+        <div className="service-denominator">
+          <span>שירות יומי:</span>
+          <strong>{plannedTripCount} יציאות מתוכננות</strong>
+          <i aria-hidden="true">·</i>
+          <strong>{siriTripCount} זמני יציאה שנרשמו ב-SIRI</strong>
+        </div>
+      )}
     </form>
   )
 }

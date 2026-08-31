@@ -53,6 +53,52 @@ export interface RideOption {
   scheduledStartTime: string
   vehicleRef: string | null
   pointCount: number
+  scheduleDeltaMinutes: number
+  relation: 'target' | 'following' | 'nearby'
+}
+
+export interface SiriRideSummary {
+  id: number
+  journeyRef: string | null
+  scheduledStartTime: string
+  vehicleRef: string | null
+  lineRef: number | null
+  operatorRef: number | null
+}
+
+export type EvidenceState =
+  | 'observed'
+  | 'not-observed'
+  | 'feed-gap'
+  | 'not-gps-verifiable'
+
+export interface TraceInterruption {
+  afterPointId: number
+  beforePointId: number
+  gapMinutes: number
+  progressDeltaMeters: number | null
+}
+
+export interface TraceStall {
+  fromPointId: number
+  toPointId: number
+  durationMinutes: number
+  progressDeltaMeters: number | null
+}
+
+export interface TripEvidence {
+  state: EvidenceState
+  targetRideIds: number[]
+  followingRides: RideOption[]
+  maxGapMinutes: number | null
+  interruptions: TraceInterruption[]
+  stalls: TraceStall[]
+  targetVehicleCount: number
+  offRoutePointCount: number
+  sustainedDeviationCount: number
+  originObservationMissing: boolean
+  destinationObservationMissing: boolean
+  explanation: string
 }
 
 export type MatchConfidence = 'high' | 'medium' | 'low'

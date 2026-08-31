@@ -1,4 +1,5 @@
 import type {
+  SiriRideSummary,
   SiriRideStopInfo,
   TimetableStop,
   VehicleLocation,
@@ -190,6 +191,15 @@ export async function fetchSiriDepartureTimes(
   window: { from: string; to: string },
   signal?: AbortSignal,
 ): Promise<string[]> {
+  const rides = await fetchSiriRides(lineRef, window, signal)
+  return rides.map((ride) => ride.scheduledStartTime)
+}
+
+export async function fetchSiriRides(
+  lineRef: number,
+  window: { from: string; to: string },
+  signal?: AbortSignal,
+): Promise<SiriRideSummary[]> {
   const params = new URLSearchParams({
     siri_route__line_refs: String(lineRef),
     siri_route__operator_refs: String(OPERATOR_REF),
@@ -200,9 +210,16 @@ export async function fetchSiriDepartureTimes(
   return fetchPaginated(
     '/siri_rides/list',
     params,
-    (value) => {
+    (value): SiriRideSummary => {
       if (!isRecord(value)) throw new Error('התקבלה רשומת נסיעת SIRI לא תקינה')
-      return requiredString(value, 'scheduled_start_time')
+      return {
+        id: requiredNumber(value, 'id'),
+        journeyRef: stringValue(value, 'journey_ref'),
+        scheduledStartTime: requiredString(value, 'scheduled_start_time'),
+        vehicleRef: stringValue(value, 'vehicle_ref'),
+        lineRef: numberValue(value, 'siri_route__line_ref'),
+        operatorRef: numberValue(value, 'siri_route__operator_ref'),
+      }
     },
     signal,
   )

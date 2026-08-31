@@ -6,11 +6,13 @@ import {
   deduplicateLocations,
   fetchGtfsStopCodes,
   fetchSiriDepartureTimes,
+  fetchSiriRides,
   fetchSiriRideStopOrders,
   fetchTimetable,
   fetchVehicleLocations,
 } from './api/openBus'
 import { RideSelector } from './components/RideSelector'
+import { EvidencePanel } from './components/EvidencePanel'
 import { SearchPanel } from './components/SearchPanel'
 import { StopsTable } from './components/StopsTable'
 import { SummaryCards } from './components/SummaryCards'
@@ -20,11 +22,17 @@ import {
   estimateStopPassages,
   STOP_MATCH_THRESHOLD_METERS,
 } from './domain/matching'
+import {
+  analyzeTripEvidence,
+  buildRideOptions,
+  preferredTargetRideId,
+  stopsForSelectedRide,
+} from './domain/tripAnalysis'
 import type {
   Direction,
   LineNumber,
-  RideOption,
   SearchFilters,
+  SiriRideSummary,
   SiriRideStopInfo,
   TimetableStop,
   VehicleLocation,
@@ -34,6 +42,7 @@ import {
   jerusalemLocalToDate,
   jerusalemToday,
   localTimeValue,
+  scheduledFollowingWindow,
   scheduledStartWindow,
   serviceDayWindow,
 } from './utils/time'
@@ -83,29 +92,6 @@ function writeUrl(filters: SearchFilters, push = false): void {
   else window.history.replaceState(null, '', url)
 }
 
-function rideOptionsFor(locations: readonly VehicleLocation[]): RideOption[] {
-  const rides = new Map<number, RideOption>()
-  for (const location of locations) {
-    const existing = rides.get(location.siriRideId)
-    if (existing) {
-      existing.pointCount += 1
-    } else {
-      rides.set(location.siriRideId, {
-        id: location.siriRideId,
-        journeyRef: location.journeyRef,
-        scheduledStartTime: location.scheduledStartTime,
-        vehicleRef: location.vehicleRef,
-        pointCount: 1,
-      })
-    }
-  }
-  return [...rides.values()].sort(
-    (a, b) =>
-      new Date(a.scheduledStartTime).getTime() -
-      new Date(b.scheduledStartTime).getTime(),
-  )
-}
-
 function selectStopsForDeparture(
   timetable: readonly TimetableStop[],
   departureTime: string,
@@ -142,6 +128,7 @@ function App() {
   const [filters, setFilters] = useState<SearchFilters>(initial)
   const [timetable, setTimetable] = useState<TimetableStop[]>([])
   const [siriDepartureTimes, setSiriDepartureTimes] = useState<string[]>([])
+  const [comparisonRides, setComparisonRides] = useState<SiriRideSummary[]>([])
   const [timetableLoading, setTimetableLoading] = useState(false)
   const [timetableMessage, setTimetableMessage] = useState<string | null>(null)
   const [locations, setLocations] = useState<VehicleLocation[]>([])
@@ -264,24 +251,58 @@ function App() {
     setError(null)
     setIsDelayed(false)
     setLocations([])
+    setComparisonRides([])
     setRideStopOrders(new Map())
     setSelectedStopId(null)
     const delayTimer = window.setTimeout(() => setIsDelayed(true), 4_000)
 
     try {
       const routeConfig = getRoute(search.line, search.direction)
-      const rows = await fetchVehicleLocations(
-        routeConfig.lineRef,
-        scheduledStartWindow(search.date, search.departureTime),
-        controller.signal,
+      const targetWindow = scheduledStartWindow(
+        search.date,
+        search.departureTime,
       )
+      const followingWindow = scheduledFollowingWindow(
+        search.date,
+        search.departureTime,
+      )
+      const [targetRows, followingRows, targetRides, followingRides] =
+        await Promise.all([
+          fetchVehicleLocations(
+            routeConfig.lineRef,
+            targetWindow,
+            controller.signal,
+          ),
+          fetchVehicleLocations(
+            routeConfig.lineRef,
+            followingWindow,
+            controller.signal,
+          ),
+          fetchSiriRides(routeConfig.lineRef, targetWindow, controller.signal),
+          fetchSiriRides(
+            routeConfig.lineRef,
+            followingWindow,
+            controller.signal,
+          ),
+        ])
+      const rows = [...targetRows, ...followingRows]
+      const siriRides = [
+        ...new Map(
+          [...targetRides, ...followingRides].map((ride) => [ride.id, ride]),
+        ).values(),
+      ]
       const cleanRows = deduplicateLocations(rows).sort(
         (a, b) =>
           new Date(a.recordedAtTime).getTime() -
           new Date(b.recordedAtTime).getTime(),
       )
       setLocations(cleanRows)
-      const rides = rideOptionsFor(cleanRows)
+      setComparisonRides(siriRides)
+      const targetScheduledTime = jerusalemLocalToDate(
+        search.date,
+        `${search.departureTime}:00`,
+      )
+      const rides = buildRideOptions(cleanRows, targetScheduledTime)
       const stopOrders = await fetchSiriRideStopOrders(
         rides.map((ride) => ride.id),
         controller.signal,
@@ -293,12 +314,14 @@ function App() {
       })
       setRideStopOrders(stopOrders)
       const requestedRideExists = rides.some((ride) => ride.id === search.rideId)
-      const selectedRideId = requestedRideExists
-        ? search.rideId
-        : rides[0]?.id ?? null
+      const selectedRideId = requestedRideExists ? search.rideId : null
       setFilters((current) => ({ ...current, rideId: selectedRideId }))
-      setStatus(cleanRows.length > 0 ? 'success' : 'empty')
-      if (cleanRows.length > 0) setSearchExpanded(false)
+      setStatus(
+        cleanRows.length > 0 || siriRides.length > 0 ? 'success' : 'empty',
+      )
+      if (cleanRows.length > 0 || siriRides.length > 0) {
+        setSearchExpanded(false)
+      }
     } catch (caught: unknown) {
       if (caught instanceof DOMException && caught.name === 'AbortError') return
       setError(
@@ -340,20 +363,75 @@ function App() {
     },
     [siriDepartureTimes, timetable],
   )
-  const rides = useMemo(() => rideOptionsFor(locations), [locations])
-  const activeRideId =
-    filters.rideId && rides.some((ride) => ride.id === filters.rideId)
-      ? filters.rideId
-      : rides[0]?.id ?? null
+  const plannedTripCount = useMemo(
+    () =>
+      new Set(
+        timetable.flatMap((stop) =>
+          stop.lineStartTime ? [stop.lineStartTime] : [],
+        ),
+      ).size,
+    [timetable],
+  )
+  const siriTripCount = useMemo(
+    () => new Set(siriDepartureTimes).size,
+    [siriDepartureTimes],
+  )
+  const targetScheduledTime = useMemo(
+    () =>
+      filters.departureTime
+        ? jerusalemLocalToDate(
+          filters.date,
+          `${filters.departureTime}:00`,
+        )
+        : null,
+    [filters.date, filters.departureTime],
+  )
+  const rides = useMemo(
+    () =>
+      targetScheduledTime
+        ? buildRideOptions(locations, targetScheduledTime)
+        : [],
+    [locations, targetScheduledTime],
+  )
+  const targetStops = useMemo(
+    () => selectStopsForDeparture(timetable, filters.departureTime),
+    [filters.departureTime, timetable],
+  )
+  const activeRideId = preferredTargetRideId(
+    rides,
+    filters.rideId,
+    locations,
+    targetStops,
+  )
   const activeRide = rides.find((ride) => ride.id === activeRideId) ?? null
+  const stops = useMemo(
+    () =>
+      activeRide
+        ? stopsForSelectedRide(
+          timetable,
+          activeRide.scheduledStartTime,
+          targetStops,
+        )
+        : targetStops,
+    [activeRide, targetStops, timetable],
+  )
   const points = useMemo(
     () =>
       locations.filter((location) => location.siriRideId === activeRideId),
     [activeRideId, locations],
   )
-  const stops = useMemo(
-    () => selectStopsForDeparture(timetable, filters.departureTime),
-    [filters.departureTime, timetable],
+  const targetRideId = preferredTargetRideId(
+    rides,
+    null,
+    locations,
+    targetStops,
+  )
+  const targetPoints = useMemo(
+    () =>
+      targetRideId === null
+        ? []
+        : locations.filter((location) => location.siriRideId === targetRideId),
+    [locations, targetRideId],
   )
   const routePreviewStops = useMemo(() => {
     const firstRideId = timetable.find((stop) => stop.gtfsRideId)?.gtfsRideId
@@ -363,6 +441,37 @@ function App() {
   const passages = useMemo(
     () => estimateStopPassages(stops, points, STOP_MATCH_THRESHOLD_METERS, rideStopOrders),
     [points, rideStopOrders, stops],
+  )
+  const targetPassages = useMemo(
+    () =>
+      estimateStopPassages(
+        targetStops,
+        targetPoints,
+        STOP_MATCH_THRESHOLD_METERS,
+        rideStopOrders,
+      ),
+    [rideStopOrders, targetPoints, targetStops],
+  )
+  const tripEvidence = useMemo(
+    () =>
+      targetScheduledTime
+        ? analyzeTripEvidence({
+          targetScheduledTime,
+          siriRides: comparisonRides,
+          rideOptions: rides,
+          points: targetPoints,
+          stops: targetStops,
+          passages: targetPassages,
+        })
+        : null,
+    [
+      comparisonRides,
+      rides,
+      targetStops,
+      targetPassages,
+      targetPoints,
+      targetScheduledTime,
+    ],
   )
   const mapPassages = useMemo(
     () =>
@@ -384,6 +493,7 @@ function App() {
     setFilters(nextFilters)
     setStatus('idle')
     setLocations([])
+    setComparisonRides([])
     setRideStopOrders(new Map())
     setError(null)
   }
@@ -539,6 +649,8 @@ function App() {
                     timetableLoading={timetableLoading}
                     timetableMessage={timetableMessage}
                     loading={status === 'loading'}
+                    plannedTripCount={plannedTripCount}
+                    siriTripCount={siriTripCount}
                     onChange={handleFiltersChange}
                     onSubmit={() => {
                       writeUrl(filters, true)
@@ -607,6 +719,7 @@ function App() {
                   selectedRideId={activeRideId}
                   onSelect={(rideId) => setFilters((current) => ({ ...current, rideId }))}
                 />
+                {tripEvidence && <EvidencePanel evidence={tripEvidence} />}
                 <SummaryCards passages={passages} points={points} />
                 <StopsTable
                   passages={passages}
