@@ -4,7 +4,9 @@ import 'leaflet/dist/leaflet.css'
 import './App.css'
 import {
   deduplicateLocations,
+  fetchGtfsStopCodes,
   fetchSiriDepartureTimes,
+  fetchSiriRideStopOrders,
   fetchTimetable,
   fetchVehicleLocations,
 } from './api/openBus'
@@ -23,6 +25,7 @@ import type {
   LineNumber,
   RideOption,
   SearchFilters,
+  SiriRideStopInfo,
   TimetableStop,
   VehicleLocation,
 } from './domain/types'
@@ -142,6 +145,11 @@ function App() {
   const [timetableLoading, setTimetableLoading] = useState(false)
   const [timetableMessage, setTimetableMessage] = useState<string | null>(null)
   const [locations, setLocations] = useState<VehicleLocation[]>([])
+  const [rideStopOrders, setRideStopOrders] = useState<
+    Map<number, SiriRideStopInfo>
+  >(
+    new Map(),
+  )
   const [status, setStatus] = useState<LoadStatus>('idle')
   const [error, setError] = useState<string | null>(null)
   const [isDelayed, setIsDelayed] = useState(false)
@@ -189,6 +197,7 @@ function App() {
       .then(async ([timetableResult, siriResult]) => {
         if (controller.signal.aborted) return
         let rows = timetableResult.status === 'fulfilled' ? timetableResult.value : []
+        let timetableSourceDate = filters.date
         const siriTimes = siriResult.status === 'fulfilled' ? siriResult.value : []
 
         if (rows.length === 0 && siriTimes.length > 0) {
@@ -199,7 +208,26 @@ function App() {
               serviceDayWindow(templateDate),
               controller.signal,
             )
+            timetableSourceDate = templateDate
             rows = shiftTimetableToDate(template, filters.date)
+          } catch (caught: unknown) {
+            if (caught instanceof DOMException && caught.name === 'AbortError') return
+          }
+        }
+
+        if (controller.signal.aborted) return
+        const cities = rows.flatMap((stop) => (stop.city ? [stop.city] : []))
+        if (cities.length > 0) {
+          try {
+            const stopCodes = await fetchGtfsStopCodes(
+              timetableSourceDate,
+              cities,
+              controller.signal,
+            )
+            rows = rows.map((stop) => ({
+              ...stop,
+              code: stopCodes.get(stop.id) ?? null,
+            }))
           } catch (caught: unknown) {
             if (caught instanceof DOMException && caught.name === 'AbortError') return
           }
@@ -236,6 +264,7 @@ function App() {
     setError(null)
     setIsDelayed(false)
     setLocations([])
+    setRideStopOrders(new Map())
     setSelectedStopId(null)
     const delayTimer = window.setTimeout(() => setIsDelayed(true), 4_000)
 
@@ -253,6 +282,16 @@ function App() {
       )
       setLocations(cleanRows)
       const rides = rideOptionsFor(cleanRows)
+      const stopOrders = await fetchSiriRideStopOrders(
+        rides.map((ride) => ride.id),
+        controller.signal,
+      ).catch((caught: unknown) => {
+        if (caught instanceof DOMException && caught.name === 'AbortError') {
+          throw caught
+        }
+        return new Map<number, SiriRideStopInfo>()
+      })
+      setRideStopOrders(stopOrders)
       const requestedRideExists = rides.some((ride) => ride.id === search.rideId)
       const selectedRideId = requestedRideExists
         ? search.rideId
@@ -322,8 +361,8 @@ function App() {
     return timetable.filter((stop) => stop.gtfsRideId === firstRideId)
   }, [timetable])
   const passages = useMemo(
-    () => estimateStopPassages(stops, points),
-    [points, stops],
+    () => estimateStopPassages(stops, points, STOP_MATCH_THRESHOLD_METERS, rideStopOrders),
+    [points, rideStopOrders, stops],
   )
   const mapPassages = useMemo(
     () =>
@@ -331,6 +370,7 @@ function App() {
         ? passages
         : routePreviewStops.map((stop) => ({
           stop,
+          stationCode: stop.code,
           point: null,
           distanceMeters: null,
           delayMinutes: null,
@@ -344,6 +384,7 @@ function App() {
     setFilters(nextFilters)
     setStatus('idle')
     setLocations([])
+    setRideStopOrders(new Map())
     setError(null)
   }
 
@@ -577,11 +618,12 @@ function App() {
                   <summary>איך מחושב זמן המעבר בתחנה?</summary>
                   <div>
                     <p>
-                      לכל תחנה נבחרת תצפית ה-GPS הקרובה ביותר, עד מרחק של{' '}
-                      {STOP_MATCH_THRESHOLD_METERS} מטר. התצפית הראשונה מוחרגת
-                      מההתאמה כאשר גם התצפית השנייה נמצאת באזור תחנת המוצא,
-                      מפני שהיא עשויה לציין את הפעלת מערכת האוטובוס ולא את
-                      תחילת הנסיעה.
+                      ההתאמה משתמשת בסדר תחנות SIRI כדי לזהות את המעבר הנכון
+                      במסלול. כשאין שיוך כזה נבחרת התצפית הראשונה שנכנסת לטווח{' '}
+                      {STOP_MATCH_THRESHOLD_METERS} מטר, ולא תצפית מאוחרת וקרובה
+                      יותר לאחר סיבוב בשכונה. זמן היציאה הוא התצפית הראשונה
+                      בתחנת המוצא שמראה התקדמות ממשית במסלול; כך זמן ההמתנה
+                      ברציף לא נחשב כיציאה מוקדמת.
                     </p>
                   </div>
                 </details>

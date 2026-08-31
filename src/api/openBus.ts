@@ -1,4 +1,8 @@
-import type { TimetableStop, VehicleLocation } from '../domain/types'
+import type {
+  SiriRideStopInfo,
+  TimetableStop,
+  VehicleLocation,
+} from '../domain/types'
 import { OPERATOR_REF } from '../config/routes'
 
 const API_BASE_URL = 'https://open-bus-stride-api.hasadna.org.il'
@@ -37,6 +41,7 @@ function parseTimetableStop(value: unknown): TimetableStop {
   if (!isRecord(value)) throw new Error('התקבלה רשומת לוח זמנים לא תקינה')
   return {
     id: requiredNumber(value, 'id'),
+    code: null,
     name: stringValue(value, 'name'),
     city: stringValue(value, 'city'),
     lon: numberValue(value, 'lon'),
@@ -46,6 +51,34 @@ function parseTimetableStop(value: unknown): TimetableStop {
     lineStartTime: stringValue(value, 'gtfs_line_start_time'),
     gtfsRideId: stringValue(value, 'gtfs_ride_id'),
   }
+}
+
+export async function fetchGtfsStopCodes(
+  date: string,
+  cities: readonly string[],
+  signal?: AbortSignal,
+): Promise<Map<number, number>> {
+  const cityRows = await Promise.all(
+    [...new Set(cities)].map((city) => {
+      const params = new URLSearchParams({
+        date_from: date,
+        date_to: date,
+        city,
+      })
+      return fetchPaginated(
+        '/gtfs_stops/list',
+        params,
+        (value): [number, number] => {
+          if (!isRecord(value)) {
+            throw new Error('התקבלה רשומת תחנת GTFS לא תקינה')
+          }
+          return [requiredNumber(value, 'id'), requiredNumber(value, 'code')]
+        },
+        signal,
+      )
+    }),
+  )
+  return new Map(cityRows.flat())
 }
 
 function parseVehicleLocation(value: unknown): VehicleLocation {
@@ -193,6 +226,38 @@ export async function fetchVehicleLocations(
     parseVehicleLocation,
     signal,
   )
+}
+
+export async function fetchSiriRideStopOrders(
+  rideIds: readonly number[],
+  signal?: AbortSignal,
+): Promise<Map<number, SiriRideStopInfo>> {
+  const rows = await Promise.all(
+    rideIds.map((rideId) => {
+      const params = new URLSearchParams({
+        siri_ride_ids: String(rideId),
+        order_by: 'order asc',
+      })
+      return fetchPaginated(
+        '/siri_ride_stops/list',
+        params,
+        (value): [number, SiriRideStopInfo] => {
+          if (!isRecord(value)) {
+            throw new Error('התקבלה רשומת תחנת SIRI לא תקינה')
+          }
+          return [
+            requiredNumber(value, 'id'),
+            {
+              order: requiredNumber(value, 'order'),
+              code: numberValue(value, 'siri_stop__code'),
+            },
+          ]
+        },
+        signal,
+      )
+    }),
+  )
+  return new Map(rows.flat())
 }
 
 export function deduplicateLocations(

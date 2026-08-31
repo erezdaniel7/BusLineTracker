@@ -1,5 +1,6 @@
 import type { StopPassage, VehicleLocation } from '../domain/types'
-import { formatLocalDateTime } from '../utils/time'
+import { distanceMeters } from '../utils/geo'
+import { formatLocalDateTime, localTimeValue } from '../utils/time'
 
 interface SummaryCardsProps {
   passages: readonly StopPassage[]
@@ -9,7 +10,24 @@ interface SummaryCardsProps {
 function delayText(delay: number | null): string {
   if (delay === null) return 'אין נתון'
   if (delay === 0) return 'בזמן'
-  return delay > 0 ? `${delay}+ דק׳` : `${Math.abs(delay)}− דק׳`
+  return delay > 0 ? `+${delay} דק׳` : `−${Math.abs(delay)} דק׳`
+}
+
+function delayMinutes(planned: string | null, actual: string | null): number | null {
+  if (!planned || !actual) return null
+  return Math.trunc(
+    (new Date(actual).getTime() - new Date(planned).getTime()) / 60_000,
+  )
+}
+
+function timePair(
+  planned: string | null,
+  actual: string | null,
+  actualLabel: string,
+): string {
+  const plannedText = planned ? localTimeValue(planned) : '—'
+  const actualText = actual ? localTimeValue(actual) : '—'
+  return `מתוכנן ${plannedText} · ${actualLabel} ${actualText}`
 }
 
 export function SummaryCards({ passages, points }: SummaryCardsProps) {
@@ -17,16 +35,33 @@ export function SummaryCards({ passages, points }: SummaryCardsProps) {
   const destination = passages.at(-1)
   const firstPoint = points[0]
   const lastPoint = points.at(-1)
+  const plannedStart = origin?.stop.plannedArrivalTime ?? firstPoint?.scheduledStartTime ?? null
+  const observedStart = origin?.point?.recordedAtTime ?? firstPoint?.recordedAtTime ?? null
+  const departureDelay = delayMinutes(plannedStart, observedStart)
+  const plannedEnd = destination?.stop.plannedArrivalTime ?? null
+  const observedEnd = destination?.point?.recordedAtTime ?? null
+  const arrivalDelay = delayMinutes(plannedEnd, observedEnd)
+  const distanceToDestination =
+    !observedEnd &&
+      lastPoint &&
+      destination?.stop.lat !== null &&
+      destination?.stop.lon !== null &&
+      destination !== undefined
+      ? distanceMeters(
+        { lat: destination.stop.lat, lon: destination.stop.lon },
+        lastPoint,
+      )
+      : null
   const durationMinutes =
     firstPoint && lastPoint
       ? Math.max(
-          0,
-          Math.round(
-            (new Date(lastPoint.recordedAtTime).getTime() -
-              new Date(firstPoint.recordedAtTime).getTime()) /
-              60_000,
-          ),
-        )
+        0,
+        Math.round(
+          (new Date(lastPoint.recordedAtTime).getTime() -
+            new Date(firstPoint.recordedAtTime).getTime()) /
+          60_000,
+        ),
+      )
       : null
   const matchedStops = passages.filter((passage) => passage.point).length
   const coverage =
@@ -38,8 +73,17 @@ export function SummaryCards({ passages, points }: SummaryCardsProps) {
         <span className="summary-icon delay">◷</span>
         <div>
           <span>איחור ביציאה</span>
-          <strong>{delayText(origin?.delayMinutes ?? null)}</strong>
-          <small>אומדן בתחנת המוצא</small>
+          <strong>
+            {!origin?.point && departureDelay !== null ? 'לפחות ' : ''}
+            {delayText(departureDelay)}
+          </strong>
+          <small>
+            {timePair(
+              plannedStart,
+              observedStart,
+              origin?.point ? 'בפועל' : 'GPS ראשון',
+            )}
+          </small>
         </div>
       </article>
       <article>
@@ -70,11 +114,21 @@ export function SummaryCards({ passages, points }: SummaryCardsProps) {
         <span className="summary-icon destination">✓</span>
         <div>
           <span>הגעה ליעד</span>
-          <strong>{destination?.point ? 'זוהתה' : 'לא זוהתה'}</strong>
+          <strong>
+            {destination?.point ? delayText(arrivalDelay) : 'לא זוהתה'}
+          </strong>
           <small>
-            {destination?.point
-              ? formatLocalDateTime(destination.point.recordedAtTime)
-              : 'אין נקודת GPS קרובה'}
+            {timePair(
+              plannedEnd,
+              observedEnd ?? lastPoint?.recordedAtTime ?? null,
+              destination?.point ? 'בפועל' : 'GPS אחרון',
+            )}
+            {distanceToDestination !== null
+              ? ` · ${distanceToDestination >= 1_000
+                ? `${(distanceToDestination / 1_000).toFixed(1)} ק״מ`
+                : `${Math.round(distanceToDestination)} מ׳`
+              } מהיעד`
+              : ''}
           </small>
         </div>
       </article>

@@ -60,11 +60,28 @@ export function StopsTable({
               <span className="compact-stop-number">{index + 1}</span>
               <span className="compact-stop-name">
                 <strong>{passage.stop.name ?? 'תחנה ללא שם'}</strong>
-                <small>{passage.stop.city ?? `מזהה ${passage.stop.id}`}</small>
+                <small>
+                  {passage.stop.city ? `${passage.stop.city} · ` : ''}
+                  {passage.stationCode ? 'מס׳ תחנה ' : 'מזהה רשומה '}
+                  <span dir="ltr">
+                    {passage.stationCode ?? passage.stop.id}
+                  </span>
+                </small>
               </span>
               <span className="compact-stop-times">
-                <small>מתוכנן</small>
-                <strong dir="ltr">{formatLocalTime(passage.stop.plannedArrivalTime)}</strong>
+                <small>
+                  מתוכנן{' '}
+                  <span dir="ltr">
+                    {formatLocalTime(passage.stop.plannedArrivalTime)}
+                  </span>
+                </small>
+                <strong>
+                  {passage.point ? (
+                    <>בפועל <span dir="ltr">{formatLocalTime(passage.point.recordedAtTime)}</span></>
+                  ) : (
+                    'אין תצפית'
+                  )}
+                </strong>
                 <span className={`delay-pill ${delayClass(passage.delayMinutes)}`}>
                   {delayText(passage.delayMinutes)}
                 </span>
@@ -99,7 +116,10 @@ export function StopsTable({
                     <strong>{passage.stop.name ?? 'תחנה ללא שם'}</strong>
                     <small>
                       {passage.stop.city ? `${passage.stop.city} · ` : ''}
-                      מזהה <span dir="ltr">{passage.stop.id}</span>
+                      {passage.stationCode ? 'מס׳ תחנה ' : 'מזהה רשומה '}
+                      <span dir="ltr">
+                        {passage.stationCode ?? passage.stop.id}
+                      </span>
                     </small>
                   </td>
                   <td dir="ltr">

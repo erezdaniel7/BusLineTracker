@@ -11,6 +11,7 @@ export interface RouteConfig {
 
 export interface TimetableStop {
   id: number
+  code: number | null
   name: string | null
   city: string | null
   lon: number | null
@@ -58,10 +59,16 @@ export type MatchConfidence = 'high' | 'medium' | 'low'
 
 export interface StopPassage {
   stop: TimetableStop
+  stationCode: number | null
   point: VehicleLocation | null
   distanceMeters: number | null
   delayMinutes: number | null
   confidence: MatchConfidence | null
+}
+
+export interface SiriRideStopInfo {
+  order: number
+  code: number | null
 }
 
 export interface SearchFilters {

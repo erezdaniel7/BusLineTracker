@@ -66,14 +66,16 @@ still paginated because the API caps normal pages at 15,000 rows.
 
 ## Methodology and limitations
 
-Each planned stop is matched to the nearest later, unused GPS observation within
-225 metres. Confidence is high through 80 m, medium through 150 m, and low
-through 225 m. Matching only moves forward through the trace, so one observation
-is not reused across stops. The first GPS observation is ignored for passage
-matching when the second observation is also within the origin station area.
-This avoids treating the driver's system startup as the bus departure time while
-preserving the first observation for sparse traces whose second point is already
-outside the station.
+Each planned stop is matched using the SIRI ride-stop order when that metadata
+is available. Otherwise, the first later observation entering a 225-metre radius
+is selected rather than a geographically closer point from a later loop through
+the neighborhood. Confidence is high through 80 m, medium through 150 m, and low
+beyond that. Matching only moves forward through the trace, so one observation
+is not reused across stops. At the origin, the first order-1 SIRI observation
+showing at least 100 metres of journey progress is used as the departure time.
+This avoids treating system startup or waiting at the platform as an early
+departure. If progress metadata is unavailable, normal station matching remains
+the fallback.
 
 The resulting passage times are estimates, not measured arrivals. GPS is usually
 sampled around once per minute and can contain missing or repeated snapshots.
